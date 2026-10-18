@@ -1,4 +1,6 @@
-# Spitfire load test for GitLab CI: a hidden job to extend.
+# Spitfire for GitLab CI: hidden jobs to extend. .spitfire-load-test runs a
+# saved load test as a gate; .spitfire-deploy (below) announces a deploy to
+# the synthetic monitors.
 #
 #   include:
 #     - remote: https://raw.githubusercontent.com/usespitfire/spitfire-examples/main/ci/gitlab/spitfire.gitlab-ci.yml
@@ -50,3 +52,59 @@
   artifacts:
     when: always
     paths: [spitfire-summary.json, spitfire-summary.md]
+
+# Announce a deploy to Spitfire's synthetic monitors: the monitors it touches
+# check at once and then every minute for 30 minutes, and each gets a verdict
+# for the deploy (clean, slower, failing more). Runs in .post, so only after
+# every earlier job, your deploy too, succeeded:
+#
+#   announce-deploy:
+#     extends: .spitfire-deploy
+#     variables:
+#       SPITFIRE_URL: https://spitfire.example.com
+#       SPITFIRE_ENVIRONMENT: prod
+#     rules:
+#       - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+#
+# Or at the end of your own deploy job (an image with curl or apk), with
+# SPITFIRE_URL and the others set on that job:
+#   script:
+#     - ./deploy.sh
+#     - !reference [.spitfire-deploy, script]
+#
+# Later jobs get SPITFIRE_DEPLOY_ID and SPITFIRE_DEPLOY_WOKEN (a dotenv report).
+.spitfire-deploy:
+  image: alpine:3.20
+  stage: .post
+  variables:
+    SPITFIRE_URL: ""              # required: your controller
+    SPITFIRE_ENVIRONMENT: ""      # wake this environment's monitors
+    SPITFIRE_DEPLOY_VERSION: ""   # shown on the monitors' trend (default the short commit SHA)
+    SPITFIRE_DEPLOY_NOTE: ""      # a short note (default the project's path)
+    SPITFIRE_DEPLOY_MONITORS: ""  # monitor ids, comma separated (default the environment's, or all you may change)
+    SPITFIRE_INSECURE: "false"    # true: a test controller with a self-signed certificate only
+  script:
+    - |
+      set -eu
+      url="${SPITFIRE_URL:-}"; env="${SPITFIRE_ENVIRONMENT:-}"; mons="${SPITFIRE_DEPLOY_MONITORS:-}"
+      version="${SPITFIRE_DEPLOY_VERSION:-${CI_COMMIT_SHORT_SHA:-}}"; note="${SPITFIRE_DEPLOY_NOTE:-${CI_PROJECT_PATH:-}}"
+      [ -n "$url" ] || { echo "set SPITFIRE_URL"; exit 1; }
+      [ -n "${SPITFIRE_TOKEN:-}" ] || { echo "set SPITFIRE_TOKEN (Settings → CI/CD → Variables, masked)"; exit 1; }
+      command -v curl >/dev/null || apk add --no-cache curl >/dev/null
+      # JSON strings by hand: no jq needed
+      js() { printf '"%s"' "$(printf '%s' "$1" | tr '\n\r\t' '   ' | sed 's/\\/\\\\/g; s/"/\\"/g')"; }
+      ids=""
+      for m in $(echo "$mons" | tr ',' ' '); do ids="${ids:+$ids,}$(js "$m")"; done
+      body="{\"environment\":$(js "$env"),\"version\":$(js "$version"),\"note\":$(js "$note")${ids:+,\"monitors\":[$ids]}}"
+      k=""; [ "${SPITFIRE_INSECURE:-false}" = true ] && k="-k"
+      out="$(mktemp)"
+      code="$(curl -sS $k -o "$out" -w '%{http_code}' -X POST "${url%/}/api/v1/deploys" \
+        -H "Authorization: Bearer $SPITFIRE_TOKEN" -H "Content-Type: application/json" --data "$body")" || code=000
+      case "$code" in 200|201|202) ;; *) echo "the deploy could not be announced (HTTP $code): $(head -c 300 "$out" 2>/dev/null)"; exit 1 ;; esac
+      id="$(grep -o '"id":"[^"]*"' "$out" | head -1 | cut -d'"' -f4 || true)"
+      woken="$(sed -n 's/.*"woken":\[\([^]]*\)\].*/\1/p' "$out" | { grep -o '"id":' || true; } | wc -l | tr -d ' ')"
+      printf 'SPITFIRE_DEPLOY_ID=%s\nSPITFIRE_DEPLOY_WOKEN=%s\n' "$id" "${woken:-0}" > spitfire-deploy.env
+      echo "Spitfire: deploy $version announced; ${woken:-0} monitor(s) on close watch for 30 minutes."
+  artifacts:
+    reports:
+      dotenv: spitfire-deploy.env

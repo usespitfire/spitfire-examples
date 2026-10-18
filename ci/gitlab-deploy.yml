@@ -1,0 +1,22 @@
+# .gitlab-ci.yml: announce each production deploy to Spitfire's synthetic
+# monitors with the Spitfire template. They check at once and then every
+# minute for 30 minutes; each monitor's page shows the deploy's verdict.
+include:
+  - remote: https://raw.githubusercontent.com/usespitfire/spitfire-examples/main/ci/gitlab/spitfire.gitlab-ci.yml
+
+stages: [deploy]
+
+deploy:
+  stage: deploy
+  script:
+    - ./deploy.sh   # your own deploy
+  rules:
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+
+announce-deploy:
+  extends: .spitfire-deploy   # runs in .post, after the deploy succeeded
+  variables:
+    SPITFIRE_URL: https://spitfire.example.com
+    SPITFIRE_ENVIRONMENT: prod
+  rules:
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
