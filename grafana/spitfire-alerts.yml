@@ -1,0 +1,56 @@
+# Prometheus alerting rules for Spitfire's synthetic monitors (Spitfire 0.53+).
+# Spitfire already notifies its own channels (Slack, Teams, e-mail, SMS, ...);
+# these are for teams that route alerts through Alertmanager instead, plus a
+# watchdog Spitfire cannot send about itself: a monitor that stopped checking.
+# Load it with rule_files: [spitfire-alerts.yml] in prometheus.yml.
+groups:
+  - name: spitfire-monitors
+    rules:
+      - alert: SpitfireMonitorDown
+        expr: spitfire_monitor_up == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Synthetic monitor {{ $labels.monitor }} ({{ $labels.environment }}) is failing"
+          description: "Spitfire's checks of {{ $labels.test }} fail or are slower than the monitor's threshold."
+
+      - alert: SpitfireMonitorStopped
+        # no check for three intervals, outside planned maintenance and license pauses
+        expr: |
+          (time() - spitfire_monitor_last_check_timestamp_seconds) > 3 * spitfire_monitor_interval_seconds
+          unless on (monitor_id) spitfire_monitor_in_maintenance == 1
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Synthetic monitor {{ $labels.monitor }} stopped checking"
+          description: "No check for over three intervals: no idle runner in its locations, or the controller is not scheduling."
+
+      - alert: SpitfireErrorBudgetLow
+        expr: spitfire_monitor_error_budget_remaining_ratio < 0.25
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.monitor }}: a quarter or less of the 30-day error budget is left"
+          description: "Budget left: {{ $value | humanizePercentage }}. Below 0 the SLO target is already missed."
+
+      - alert: SpitfireErrorBudgetBurningFast
+        # the last day spends the budget ten times faster than the 30 days allow
+        expr: spitfire_monitor_error_budget_burn_rate > 10
+        for: 30m
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.monitor }} is burning its error budget fast"
+          description: "Burn rate {{ $value | printf \"%.1f\" }}: over the last day the budget went more than ten times faster than 30 days allow."
+
+      - alert: SpitfireMonitorDrifting
+        expr: spitfire_monitor_drifting == 1
+        for: 10m
+        labels:
+          severity: info
+        annotations:
+          summary: "{{ $labels.monitor }} drifts from its living baseline ({{ $labels.kind }})"
+          description: "Its last 24 hours are clearly {{ $labels.kind }} than the 7 days before; no threshold was crossed yet."

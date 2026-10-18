@@ -15,7 +15,7 @@ Example load tests for [Spitfire](https://usespitfire.com), a self-hosted, distr
 | [`ci/github-actions.yml`](ci/github-actions.yml) | — | A performance gate on every pull request with the [Spitfire GitHub Action](https://github.com/usespitfire/spitfire-action) |
 | [`ci/gitlab-ci.yml`](ci/gitlab-ci.yml) | — | The same in GitLab CI with the [Spitfire template](ci/gitlab/spitfire.gitlab-ci.yml) (`include: remote` + `extends`) |
 | [`ci/gitlab-deploy.yml`](ci/gitlab-deploy.yml) | — | Announce each deploy to Spitfire's synthetic monitors (`extends: .spitfire-deploy`): they watch closely for 30 minutes and give the deploy a verdict |
-| [`grafana/`](grafana) | — | A Grafana dashboard for Spitfire's Prometheus endpoint (live runs, runners, the controller's health) and a scrape example |
+| [`grafana/`](grafana) | — | A Grafana dashboard for Spitfire's Prometheus endpoint (live runs, synthetic monitors, runners, the controller's health), alerting rules and a scrape example |
 
 Every test here is checked with `spitfire validate`.
 
@@ -76,8 +76,10 @@ Questions or an example you'd like to see: open an issue.
 ## Grafana dashboard
 
 Spitfire's controller serves Prometheus metrics on `/metrics` (scraped with a personal API token):
-live runs (virtual users, requests/s, p50/p95/p99 latency, error ratio, per-step p95), runners by
-status and location, and the controller's own health.
+live runs (virtual users, requests/s, p50/p95/p99 latency, error ratio, per-step p95), synthetic
+monitors (up/down, error budget left and burn rate, drift, planned maintenance, the last check), runners
+by status and location, and the controller's own health. A user's token shows only their own monitors;
+an admin's shows all of them.
 
 1. Create a token in Spitfire (user menu, top right → **API tokens** → **Create token**) and add the job in
    [`grafana/prometheus.yml`](grafana/prometheus.yml) to your Prometheus.
@@ -86,4 +88,12 @@ status and location, and the controller's own health.
 
 The **Test** variable filters the run panels by test name. A run stays on the dashboard for two
 minutes after it ends, with its final status.
+
+### Alerting rules
+
+Spitfire sends its own alerts to Slack, Teams, e-mail, SMS and the rest. If your team routes alerts
+through Alertmanager instead, [`grafana/spitfire-alerts.yml`](grafana/spitfire-alerts.yml) has five
+rules for the monitors: failing, stopped checking (no check for three intervals, outside planned
+maintenance), a quarter or less of the error budget left, burning the budget fast, and drifting from
+the living baseline. Add it with `rule_files: [spitfire-alerts.yml]` in your Prometheus configuration.
 

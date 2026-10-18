@@ -49,7 +49,7 @@
   ],
   "title": "Spitfire",
   "uid": "spitfire-overview",
-  "description": "Spitfire load testing: live runs, runners and the controller's health, from Spitfire's Prometheus endpoint.",
+  "description": "Spitfire: live runs, synthetic monitors (state, error budget, drift, maintenance), runners and the controller's health, from Spitfire's Prometheus endpoint.",
   "tags": [
     "spitfire",
     "load testing",
@@ -64,7 +64,7 @@
   },
   "timezone": "",
   "schemaVersion": 39,
-  "version": 1,
+  "version": 2,
   "templating": {
     "list": [
       {
@@ -776,6 +776,460 @@
     },
     {
       "type": "row",
+      "title": "Synthetic monitors",
+      "id": 28,
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 27
+      },
+      "panels": []
+    },
+    {
+      "type": "stat",
+      "title": "Monitors up",
+      "id": 29,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "description": "Enabled synthetic monitors whose last checks were good.",
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 0,
+        "y": 28
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "refId": "A",
+          "expr": "spitfire_monitors{state=\"up\"}",
+          "legendFormat": ""
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "auto"
+      }
+    },
+    {
+      "type": "stat",
+      "title": "Alerting",
+      "id": 30,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "description": "Monitors with an open incident (monitor.down sent).",
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 4,
+        "y": 28
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "refId": "A",
+          "expr": "spitfire_monitors{state=\"down\"}",
+          "legendFormat": ""
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 1
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "auto"
+      }
+    },
+    {
+      "type": "stat",
+      "title": "In maintenance",
+      "id": 31,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "description": "Planned maintenance: checks skipped, no alerts.",
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 8,
+        "y": 28
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "refId": "A",
+          "expr": "spitfire_monitors{state=\"maintenance\"}",
+          "legendFormat": ""
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "auto"
+      }
+    },
+    {
+      "type": "stat",
+      "title": "Drifting",
+      "id": 32,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "description": "Monitors off their living baseline (slower or failing more than the 7 days before).",
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 12,
+        "y": 28
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "refId": "A",
+          "expr": "sum(spitfire_monitor_drifting) or vector(0)",
+          "legendFormat": ""
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 1
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "auto"
+      }
+    },
+    {
+      "type": "stat",
+      "title": "Lowest error budget",
+      "id": 33,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "description": "The 30-day error budget left of the monitor with the least (below 0: overspent).",
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 16,
+        "y": 28
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "refId": "A",
+          "expr": "min(spitfire_monitor_error_budget_remaining_ratio)",
+          "legendFormat": ""
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 0
+              },
+              {
+                "color": "green",
+                "value": 0.25
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "auto"
+      }
+    },
+    {
+      "type": "stat",
+      "title": "Since the last check",
+      "id": 34,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "description": "How long ago any monitor last checked; it should stay below the shortest interval.",
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 20,
+        "y": 28
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "refId": "A",
+          "expr": "time() - max(spitfire_monitor_last_check_timestamp_seconds)",
+          "legendFormat": ""
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "auto"
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Error budget left",
+      "id": 35,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "description": "Each monitor's 30-day error budget left (1 untouched, 0 spent).",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 32
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "refId": "A",
+          "expr": "min by (monitor) (spitfire_monitor_error_budget_remaining_ratio)",
+          "legendFormat": "{{monitor}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 10
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "asc"
+        }
+      }
+    },
+    {
+      "type": "table",
+      "title": "Monitors",
+      "id": 36,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "description": "Every enabled monitor and its state: up, down, unknown, maintenance or paused (by the license).",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 32
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "refId": "A",
+          "expr": "spitfire_monitor_info",
+          "legendFormat": "",
+          "instant": true,
+          "range": false,
+          "format": "table"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      },
+      "options": {
+        "showHeader": true
+      },
+      "transformations": [
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": true,
+              "Value": true,
+              "__name__": true,
+              "instance": true,
+              "job": true,
+              "monitor_id": true
+            },
+            "renameByName": {
+              "monitor": "Monitor",
+              "test": "Test",
+              "environment": "Environment",
+              "state": "State"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "type": "row",
       "title": "Runners",
       "id": 14,
       "collapsed": false,
@@ -783,7 +1237,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 27
+        "y": 40
       },
       "panels": []
     },
@@ -800,7 +1254,7 @@
         "h": 5,
         "w": 8,
         "x": 0,
-        "y": 28
+        "y": 41
       },
       "targets": [
         {
@@ -843,7 +1297,7 @@
         "h": 5,
         "w": 8,
         "x": 8,
-        "y": 28
+        "y": 41
       },
       "targets": [
         {
@@ -878,7 +1332,7 @@
         "h": 5,
         "w": 8,
         "x": 16,
-        "y": 28
+        "y": 41
       },
       "targets": [
         {
@@ -915,7 +1369,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 33
+        "y": 46
       },
       "panels": []
     },
@@ -932,7 +1386,7 @@
         "h": 4,
         "w": 6,
         "x": 0,
-        "y": 34
+        "y": 47
       },
       "targets": [
         {
@@ -977,7 +1431,7 @@
         "h": 4,
         "w": 6,
         "x": 6,
-        "y": 34
+        "y": 47
       },
       "targets": [
         {
@@ -1026,7 +1480,7 @@
         "h": 4,
         "w": 6,
         "x": 12,
-        "y": 34
+        "y": 47
       },
       "targets": [
         {
@@ -1087,7 +1541,7 @@
         "h": 4,
         "w": 6,
         "x": 18,
-        "y": 34
+        "y": 47
       },
       "targets": [
         {
@@ -1135,7 +1589,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 38
+        "y": 51
       },
       "targets": [
         {
@@ -1203,7 +1657,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 38
+        "y": 51
       },
       "targets": [
         {
@@ -1246,7 +1700,7 @@
         "h": 7,
         "w": 8,
         "x": 0,
-        "y": 46
+        "y": 59
       },
       "targets": [
         {
@@ -1289,7 +1743,7 @@
         "h": 7,
         "w": 8,
         "x": 8,
-        "y": 46
+        "y": 59
       },
       "targets": [
         {
@@ -1341,7 +1795,7 @@
         "h": 7,
         "w": 8,
         "x": 16,
-        "y": 46
+        "y": 59
       },
       "targets": [
         {
