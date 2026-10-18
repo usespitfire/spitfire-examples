@@ -1,6 +1,7 @@
 # Spitfire for GitLab CI: hidden jobs to extend. .spitfire-load-test runs a
 # saved load test as a gate; .spitfire-deploy (below) announces a deploy to
-# the synthetic monitors.
+# the synthetic monitors; .spitfire-maintenance puts them in planned
+# maintenance.
 #
 #   include:
 #     - remote: https://raw.githubusercontent.com/usespitfire/spitfire-examples/main/ci/gitlab/spitfire.gitlab-ci.yml
@@ -108,3 +109,69 @@
   artifacts:
     reports:
       dotenv: spitfire-deploy.env
+
+# Planned maintenance (Spitfire 0.51+): the monitors' checks are skipped (and
+# left out of uptime, SLO and deploy verdicts) and nothing alerts until it
+# ends. SPITFIRE_MAINTENANCE is minutes (1-1440) to start it, or end to end it
+# (the monitors check at once). Quiet them before a deploy with downtime, end
+# it after:
+#
+#   maintenance-start:
+#     extends: .spitfire-maintenance
+#     stage: deploy
+#     variables:
+#       SPITFIRE_URL: https://spitfire.example.com
+#       SPITFIRE_ENVIRONMENT: prod
+#       SPITFIRE_MAINTENANCE: "30"
+#       SPITFIRE_MAINTENANCE_NOTE: database migration
+#   maintenance-end:
+#     extends: .spitfire-maintenance
+#     stage: .post
+#     when: always
+#     variables:
+#       SPITFIRE_URL: https://spitfire.example.com
+#       SPITFIRE_ENVIRONMENT: prod
+#       SPITFIRE_MAINTENANCE: end
+#
+# Or in your own deploy job: - !reference [.spitfire-maintenance, script]
+# Later jobs get SPITFIRE_MAINTENANCE_UNTIL (empty when ended).
+.spitfire-maintenance:
+  image: alpine:3.20
+  variables:
+    SPITFIRE_URL: ""              # required: your controller
+    SPITFIRE_MAINTENANCE: ""      # required: minutes (1-1440), or end
+    SPITFIRE_ENVIRONMENT: ""      # this environment's monitors
+    SPITFIRE_MAINTENANCE_NOTE: "" # why, shown on the monitors' pages
+    SPITFIRE_DEPLOY_MONITORS: ""  # monitor ids, comma separated (default the environment's, or all you may change)
+    SPITFIRE_INSECURE: "false"    # true: a test controller with a self-signed certificate only
+  script:
+    - |
+      set -eu
+      url="${SPITFIRE_URL:-}"; env="${SPITFIRE_ENVIRONMENT:-}"; mons="${SPITFIRE_DEPLOY_MONITORS:-}"
+      maint="${SPITFIRE_MAINTENANCE:-}"; note="${SPITFIRE_MAINTENANCE_NOTE:-}"
+      [ -n "$url" ] || { echo "set SPITFIRE_URL"; exit 1; }
+      [ -n "${SPITFIRE_TOKEN:-}" ] || { echo "set SPITFIRE_TOKEN (Settings → CI/CD → Variables, masked)"; exit 1; }
+      case "$maint" in
+        end) minutes=0 ;;
+        ""|*[!0-9]*) echo "SPITFIRE_MAINTENANCE is a number of minutes (1-1440) or end, not '$maint'"; exit 1 ;;
+        *) minutes=$(printf '%s' "$maint" | sed 's/^0*//'); minutes=${minutes:-0}
+           [ "$minutes" -gt 0 ] || { echo "SPITFIRE_MAINTENANCE: give 1-1440 minutes, or end"; exit 1; } ;;
+      esac
+      command -v curl >/dev/null || apk add --no-cache curl >/dev/null
+      js() { printf '"%s"' "$(printf '%s' "$1" | tr '\n\r\t' '   ' | sed 's/\\/\\\\/g; s/"/\\"/g')"; }
+      ids=""
+      for m in $(echo "$mons" | tr ',' ' '); do ids="${ids:+$ids,}$(js "$m")"; done
+      body="{\"environment\":$(js "$env"),\"minutes\":$minutes,\"note\":$(js "$note")${ids:+,\"monitors\":[$ids]}}"
+      k=""; [ "${SPITFIRE_INSECURE:-false}" = true ] && k="-k"
+      out="$(mktemp)"
+      code="$(curl -sS $k -o "$out" -w '%{http_code}' -X POST "${url%/}/api/v1/maintenance" \
+        -H "Authorization: Bearer $SPITFIRE_TOKEN" -H "Content-Type: application/json" --data "$body")" || code=000
+      [ "$code" = 200 ] || { echo "the maintenance could not be set (HTTP $code): $(head -c 300 "$out" 2>/dev/null)"; exit 1; }
+      until="$(grep -o '"until":"[^"]*"' "$out" | head -1 | cut -d'"' -f4 || true)"
+      n="$({ grep -o '"id":' "$out" || true; } | wc -l | tr -d ' ')"
+      printf 'SPITFIRE_MAINTENANCE_UNTIL=%s\n' "$until" > spitfire-maintenance.env
+      if [ "$minutes" -gt 0 ]; then echo "Spitfire: $n monitor(s) in planned maintenance until $until."
+      else echo "Spitfire: planned maintenance ended for $n monitor(s); they check at once."; fi
+  artifacts:
+    reports:
+      dotenv: spitfire-maintenance.env

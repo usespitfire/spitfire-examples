@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Runs the template's .spitfire-deploy script against a live Spitfire, as a
+"""Runs the template's .spitfire-deploy and .spitfire-maintenance scripts against a live Spitfire, as a
 GitLab runner would: in alpine:3.20 (busybox sh) with the job's variables and
 the CI_* ones. Needs docker, SPITFIRE_URL and SPITFIRE_ADMIN_EMAIL /
 SPITFIRE_ADMIN_PASSWORD (a Spitfire docs-shots stack:
@@ -36,7 +36,7 @@ tok = call("POST", "/auth/login", {"email": os.environ["SPITFIRE_ADMIN_EMAIL"], 
 pat = call("POST", "/me/api-tokens", {"name": "gitlab template test", "expiresInDays": 1}, tok)["data"]["token"]
 
 
-def run_job(variables, job_vars=True):
+def run_job(variables, job_vars=True, job=job, dotenv_file="spitfire-deploy.env"):
     """The script in the job's image; job_vars False is the !reference form
     (only what the caller's job sets). Returns (exit code, dotenv, output)."""
     work = tempfile.mkdtemp(prefix="sf-gitlab-")
@@ -50,7 +50,7 @@ def run_job(variables, job_vars=True):
     r = subprocess.run(args + [job["image"], "sh", "-c", "\n".join(job["script"])], capture_output=True, text=True)
     out = (r.stdout + r.stderr).strip()
     sys.stdout.write("".join("        " + l + "\n" for l in out.splitlines()[-4:]))
-    p = os.path.join(work, "spitfire-deploy.env")
+    p = os.path.join(work, dotenv_file)
     dotenv = dict(l.split("=", 1) for l in open(p).read().splitlines()) if os.path.exists(p) else {}
     return r.returncode, dotenv, out
 
@@ -97,5 +97,23 @@ code, _, out = run_job({"SPITFIRE_URL": IN_DOCKER})
 check("no token: job fails", code == 1 and "SPITFIRE_TOKEN" in out, (code, out))
 code, _, out = run_job({"SPITFIRE_URL": IN_DOCKER, "SPITFIRE_TOKEN": pat, "SPITFIRE_DEPLOY_MONITORS": "00000000-0000-0000-0000-000000000000"})
 check("unknown monitor id: job fails", code == 1 and "HTTP 404" in out, (code, out))
+
+# 7. planned maintenance: start for the environment with a note, then end
+mj = tpl[".spitfire-maintenance"]
+maint = lambda v, jv=True: run_job(v, jv, mj, "spitfire-maintenance.env")
+def listed():
+    m = call("GET", "/monitors", None, tok)["data"]
+    return m.get("items", m) if isinstance(m, dict) else m
+check("template: .spitfire-maintenance has a dotenv report", mj["artifacts"]["reports"]["dotenv"] == "spitfire-maintenance.env")
+code, env, out = maint({"SPITFIRE_URL": IN_DOCKER, "SPITFIRE_TOKEN": pat, "SPITFIRE_MAINTENANCE": "045", "SPITFIRE_MAINTENANCE_NOTE": 'db "up"\\'})
+quiet = [m for m in listed() if m.get("maintenanceUntil")]
+check("maintenance 045: job passes, until in the dotenv", code == 0 and env.get("SPITFIRE_MAINTENANCE_UNTIL"), (code, env, out))
+check("maintenance 045: every monitor quiet, the note as written", quiet and len(quiet) == len(listed()) and all(m["maintenanceNote"] == 'db "up"\\' for m in quiet), quiet)
+code, env, out = maint({"SPITFIRE_URL": IN_DOCKER, "SPITFIRE_TOKEN": pat, "SPITFIRE_MAINTENANCE": "end"}, False)
+check("maintenance end (!reference form): ended, until empty", code == 0 and env.get("SPITFIRE_MAINTENANCE_UNTIL") == ""
+      and not any(m.get("maintenanceUntil") for m in listed()) and "ended" in out, (code, env, out))
+for bad in ("", "soon", "0", "2000"):
+    code, _, out = maint({"SPITFIRE_URL": IN_DOCKER, "SPITFIRE_TOKEN": pat, "SPITFIRE_MAINTENANCE": bad})
+    check(f"maintenance {bad!r}: job fails, nothing changed", code == 1 and not any(m.get("maintenanceUntil") for m in listed()), (code, out))
 
 sys.exit(1 if fails else 0)
