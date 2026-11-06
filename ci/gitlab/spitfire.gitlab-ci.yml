@@ -18,7 +18,8 @@
 # The CLI comes from your controller (always its version) and is checked
 # against the SHA-256 the controller sends. The test runs on your Spitfire
 # runners; the job fails when a threshold fails (exit 99; 97 aborted, 98 the
-# candidate is worse in a comparison).
+# candidate is worse in a comparison; 96 with SPITFIRE_FAIL_ON_REGRESSION, a
+# step worse than the test's reference run).
 .spitfire-load-test:
   image: alpine:3.20
   variables:
@@ -28,6 +29,7 @@
     SPITFIRE_RUNNERS: "1"
     SPITFIRE_REPORT_LANG: "en"  # en or tr
     SPITFIRE_MR_COMMENT: "auto" # true, false, or auto (in merge request pipelines)
+    SPITFIRE_FAIL_ON_REGRESSION: "false" # true: exit 96 when a step is worse than the test's reference run (Spitfire 1.4.2+)
     SPITFIRE_EXTRA_ARGS: ""     # any other `spitfire cloud run` flags, e.g. --compare A=prod,B=staging
   script:
     - |
@@ -45,6 +47,7 @@
       gunzip -c "/tmp/$f" > /usr/local/bin/spitfire && chmod +x /usr/local/bin/spitfire
       set -- cloud run "$SPITFIRE_TEST" -r "$SPITFIRE_RUNNERS" --report-lang "$SPITFIRE_REPORT_LANG" -o spitfire-summary.json --summary-md spitfire-summary.md
       [ -z "$SPITFIRE_ENVIRONMENT" ] || set -- "$@" --env "$SPITFIRE_ENVIRONMENT"
+      [ "${SPITFIRE_FAIL_ON_REGRESSION:-false}" != true ] || set -- "$@" --fail-on-regression
       if [ "$SPITFIRE_MR_COMMENT" = true ] || { [ "$SPITFIRE_MR_COMMENT" = auto ] && [ "${CI_PIPELINE_SOURCE:-}" = merge_request_event ]; }; then
         set -- "$@" --pr-comment
       fi
